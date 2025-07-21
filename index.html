@@ -1,90 +1,120 @@
 <!doctype html>
-<meta charset="utf-8">
-<title>Mural Maker – Linked Mode</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Mural Maker — Linked AR</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
 
-<!-- ─── libs (20 kB PeerJS + A-Frame + MindAR + Gesture) ─── -->
-<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/aframe@1.5.0/dist/aframe.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.4/dist/mindar-image-aframe.prod.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/fcor/arjs-gestures/dist/gestures.min.js"></script>
+  <!-- libraries -->
+  <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe@1.5.0/dist/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.4/dist/mindar-image-aframe.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/fcor/arjs-gestures/dist/gestures.min.js"></script>
 
-<style>
-html,body{margin:0;height:100%;overflow:hidden;background:#000;font:16px Arial}
-#ui{position:fixed;top:10px;left:10px;z-index:10;color:#fff}
-#ui input{width:140px}
-video{display:none}
-</style>
+  <style>
+    html,body{margin:0;height:100%;overflow:hidden;background:#000;font:16px Arial}
+    #ui{position:fixed;top:10px;left:10px;z-index:10;color:#fff;
+        backdrop-filter:blur(4px);padding:6px 10px;border-radius:8px}
+    #ui select,#ui input{font:inherit}
+    video{display:none}
+  </style>
+</head>
+<body>
 
+<!-- control panel -->
 <div id="ui">
-  Role:
+  Role :
   <select id="role">
     <option value="camera">Tripod Camera</option>
     <option value="viewer">Painter Viewer</option>
   </select>
-  Peer&nbsp;ID <input id="pid" placeholder="(auto)" disabled>
+  Peer ID <input id="pid" placeholder="(auto)" disabled>
   <button id="go">Start</button>
+  <button id="pickBtn" style="display:none">📷 Choose Image</button>
+  <input id="filePick" type="file" accept="image/*" hidden>
 </div>
 
-<video id="cam" playsinline></video>
-<video id="remote" playsinline></video>
+<!-- hidden video elements -->
+<video id="cam" playsinline muted></video>
+<video id="remote" playsinline muted></video>
 
+<!-- AR scene -->
 <a-scene id="scene" embedded style="display:none"
          gesture-detector
          device-orientation-permission-ui="enabled: true">
-  <a-assets><video id="camTex" autoplay playsinline muted></video></a-assets>
+  <a-assets>
+    <video id="camTex" autoplay playsinline muted></video>
+  </a-assets>
 
-  <!-- live background video -->
+  <!-- live background -->
   <a-plane id="bg" width="4" height="3" position="0 0 -4"
-           material="shader: flat; src:#camTex"></a-plane>
+           material="shader: flat; src: #camTex"></a-plane>
 
-  <!-- marker-anchored mural -->
+  <!-- mural overlay anchored to marker -->
   <a-entity mindar-image="imageTargetSrc: targets.mind;">
-     <a-plane src="mural.jpg" width="1.8" height="1.2"
-              gesture-handler></a-plane>
+    <a-plane id="mural" src="mural.jpg" width="1.8" height="1.2"
+             gesture-handler></a-plane>
   </a-entity>
+
   <a-entity camera></a-entity>
 </a-scene>
 
 <script>
-const $=q=>document.querySelector(q);
-let peer, localStream;
+const $ = sel => document.querySelector(sel);
+let peer;
 
-$('#go').onclick = async ()=>{
+/* initial click */
+$('#go').onclick = () => {
+  peer = new Peer();                                 // uses PeerJS Cloud
   const role = $('#role').value;
-  peer = new Peer();                           // PeerJS cloud server
 
-  peer.on('open', id=>{
-    if(role==='camera'){
-      $('#pid').value = id; $('#pid').disabled = true;
-      startCameraMode(id);
-    }else{
-      $('#pid').placeholder = 'enter camera ID'; $('#pid').disabled = false;
-      $('#go').textContent = 'Connect';            // change button meaning
-      $('#go').onclick = ()=> startViewerMode($('#pid').value);
+  peer.on('open', id => {
+    if (role === 'camera') {
+      $('#pid').value = id;
+      startCameraMode();
+    } else {
+      $('#pickBtn').style.display = 'inline-block';
+      $('#pid').placeholder = 'enter camera ID';
+      $('#pid').disabled = false;
+      $('#go').textContent = 'Connect';
+      $('#go').onclick = () => startViewerMode($('#pid').value);
     }
   });
 };
 
-/* ── Tripod camera ─────────────────────────────────────────── */
-async function startCameraMode(id){
-  localStream = await navigator.mediaDevices.getUserMedia({
-                 video:{facingMode:'environment'}, audio:false});
-  $('#cam').srcObject = localStream; $('#cam').play();
-  $('#ui').innerHTML = `Tripod camera ready.<br>ID: <b>${id}</b>`;
-  peer.on('call', call=>call.answer(localStream));   // share to each viewer
+/* Tripod Camera */
+async function startCameraMode() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'environment' }, audio: false });
+  $('#cam').srcObject = stream; $('#cam').play();
+  $('#ui').innerHTML =
+    `Tripod camera ready.<br>ID: <b>${$('#pid').value}</b><br>(share this ID)`;
+
+  peer.on('call', call => call.answer(stream));     // serve stream to viewers
 }
 
-/* ── Painter viewer ────────────────────────────────────────── */
-function startViewerMode(camID){
-  if(!camID){ alert('Enter the camera peer-ID'); return; }
-  $('#scene').style.display='block';         // reveal A-Frame scene
-  $('#ui').style.display='none';             // hide UI
+/* Painter Viewer */
+function startViewerMode(camID) {
+  if (!camID) { alert('Enter the camera peer-ID'); return; }
+
+  $('#scene').style.display = 'block';
+  $('#ui').style.display = 'none';
 
   const call = peer.call(camID, null);
-  call.on('stream', stream=>{
+  call.on('stream', stream => {
     $('#remote').srcObject = stream; $('#remote').play();
-    $('#camTex').srcObject = stream;         // feed into plane texture
+    $('#camTex').srcObject = stream;                // texture for background
   });
+
+  /* image picker */
+  $('#pickBtn').onclick = () => $('#filePick').click();
+  $('#filePick').onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    $('#mural').setAttribute('src', url);           // swap mural texture
+  };
 }
 </script>
+</body>
+</html>
