@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8">
+<title>MuralCam</title>
+<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<body style="margin:0;background:#000;color:#0f0;font:16px monospace">
+
+<video id="local" playsinline muted style="width:100%"></video>
+<p id="idLine"></p>
+
+<script>
+const peer = new Peer();                     // use PeerJS Cloud
+peer.on('open', id=>{
+  idLine.textContent = `Camera peer-ID: ${id}`;
+});
+navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"},audio:false})
+  .then(stream=>{
+     local.srcObject = stream; local.play();
+     peer.on('call', call=>call.answer(stream));   // share with each viewer
+  });
+</script>
+</body>
