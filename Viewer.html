@@ -1,0 +1,49 @@
+<!doctype html><meta charset="utf-8">
+<title>Mural Viewer</title>
+<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/aframe@1.5.0/dist/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.4/dist/mindar-image-aframe.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/fcor/arjs-gestures/dist/gestures.min.js"></script>
+
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#000}
+#ui{position:fixed;top:8px;left:8px;color:#fff;z-index:9;font:14px Arial}
+</style>
+
+<div id="ui">
+  Camera ID <input id="pid" size="10"> 
+  <button onclick="connect()">Connect</button>
+</div>
+
+<video id="remote" playsinline style="display:none"></video>
+
+<a-scene embedded gesture-detector device-orientation-permission-ui="enabled: true">
+  <a-assets>
+     <video id="camTex" src="" autoplay loop muted playsinline></video>
+  </a-assets>
+
+  <!-- full-screen video background -->
+  <a-plane id="bg" width="4" height="3" position="0 0 -4" rotation="0 0 0"
+           material="shader: flat; src: #camTex"></a-plane>
+
+  <!-- mural overlay anchored on the marker -->
+  <a-entity mindar-image="imageTargetSrc: targets.mind;">
+     <a-plane id="mural" src="mural.jpg" width="1.8" height="1.2"
+              gesture-handler></a-plane>
+  </a-entity>
+  <a-entity camera></a-entity>
+</a-scene>
+
+<script>
+let peer, conn;
+function connect(){
+  peer = new Peer();
+  peer.on('open',()=>{                   // dial the tripod
+     const call = peer.call(pid.value, null);
+     call.on('stream', stream=>{
+        remote.srcObject = stream; remote.play();
+        camTex.srcObject = stream;       // pipe into A-Frame texture
+     });
+  });
+}
+</script>
