@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Genesis Evolution — Star-Frenzy (Headless Neon Final)</title>
+  <title>Genesis Evolution — Star-Frenzy (Headless Neon Final, Grid+Radar+Music Fix)</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <style>
@@ -85,15 +85,15 @@
 
   <div id="fps">FPS: 60</div>
 
-  <!-- audio (kept external-friendly; you can replace src; muted toggle provided) -->
-  <audio id="backgroundMusic" src="" loop preload="none"></audio>
-  <audio id="eatSnd" src="" preload="none"></audio>
-  <audio id="hurtSnd" src="" preload="none"></audio>
-  <audio id="frenzySnd" src="" preload="none"></audio>
+  <!-- audio: restored background-music.mp3, iOS-friendly unlock -->
+  <audio id="backgroundMusic" src="background-music.mp3" loop preload="auto"></audio>
+  <audio id="eatSnd" src="eat.mp3" preload="auto"></audio>
+  <audio id="hurtSnd" src="hurt.mp3" preload="auto"></audio>
+  <audio id="frenzySnd" src="frenzy.mp3" preload="auto"></audio>
 
   <script>
     /* ===================== Tunables / Globals ===================== */
-    const TILE=48, SCALE=4, COLS=32, ROWS=5; // kept for compatibility (headless now)
+    const TILE=48, SCALE=4, COLS=32, ROWS=5; // retained (head removed)
     const MASS_THRESH=600, TITAN_LEVEL=10, TITAN_MAX=6, TITAN_RESPAWN_MS=20000,
           SPECTRE_MAX=3, REAPER_MAX=3, C_RING_DIST=1600, SPECTRE_SPEED_MS=6000,
           SPECTRE_SPEED_MULT=1.25, ZOOM_EASE=0.25, MASS_SPEED_FACTOR=0.0012,
@@ -231,8 +231,16 @@
     joystickCanvas?.addEventListener('touchend',()=>{ joystickActive=false; joystickX=0; joystickY=0; target.active=false; }, {passive:true});
     if (/Mobi|Android|iPad|iPhone/i.test(navigator.userAgent)) document.getElementById('joystick').style.display='block';
 
-    // audio unlock (no-op if muted / no src)
-    function unlockAudio(){ const bg=document.getElementById('backgroundMusic'); if (bg && bg.paused && !isMuted) bg.play().catch(()=>{}); }
+    // audio unlock (iOS)
+    function unlockAudio(){
+      const bg=document.getElementById('backgroundMusic');
+      if (bg && !isMuted){
+        const p = bg.play();
+        if (p && p.catch) p.catch(()=>{ /* ignore */});
+      }
+      removeEventListener('touchstart', unlockAudio, {once:true});
+      removeEventListener('pointerdown', unlockAudio, {once:true});
+    }
     addEventListener('touchstart', unlockAudio, { once:true });
     addEventListener('pointerdown', unlockAudio, { once:true });
 
@@ -252,56 +260,75 @@
 
     /* ===================== Radar ===================== */
     function drawRadar(){
+      if (!rctx) return; // guard
       rctx.clearRect(0,0,70,70);
       rctx.fillStyle='rgba(0,0,0,.4)'; rctx.fillRect(0,0,70,70);
+      // player dot
       rctx.fillStyle='#fff'; rctx.beginPath(); rctx.arc(35,35,2,0,Math.PI*2); rctx.fill();
-      const radarRange=Math.max(2000, dist(player.x,player.y,0,0)*1.1), scale=66/(radarRange*2);
-      const cx=(0-player.x)*scale+35, cy=(0-player.y)*scale+35;
-      if (cx>=2&&cx<=68&&cy>=2&&cy<=68){ rctx.strokeStyle='#fff'; rctx.lineWidth=1; rctx.beginPath();
-        rctx.moveTo(cx-3,cy); rctx.lineTo(cx+3,cy); rctx.moveTo(cx,cy-3); rctx.lineTo(cx,cy+3); rctx.stroke(); }
-      const dot=(x,y,sz,color)=>{ const dx=(x-player.x)*scale+35, dy=(y-player.y)*scale+35;
-        if (dx<2||dx>68||dy<2||dy>68) return; rctx.fillStyle=color; rctx.beginPath(); rctx.arc(dx,dy,sz,0,Math.PI*2); rctx.fill(); };
-      food.forEach(f=>dot(f.x,f.y,1,f.frenzy?f.col:'#ff0'));
-      foes.forEach(o=>dot(o.x,o.y,1,'#f00'));
-      titans.forEach(o=>dot(o.x,o.y,1.5,'#cc00ff'));
-      spectres.forEach(s=>dot(s.x,s.y,1.5,'#ff39ff'));
-      reapers.forEach(r=>dot(r.x,r.y,1.5,'#ff8800'));
-      if (pill.active) dot(pill.x,pill.y,1.5,'#00aaff');
-      if (shield.active) dot(shield.x,shield.y,1.5,'#ffd700'); // fixed Y calc
-      beacons.forEach(b=>dot(b.x,b.y,1.5,'#fff'));
+
+      const radarRange=Math.max(2000, dist(player.x,player.y,0,0)*1.1);
+      const scale=66/(radarRange*2);
+      const dot = (x,y,sz,color)=>{
+        const dx=(x-player.x)*scale+35, dy=(y-player.y)*scale+35;
+        if (dx<2||dx>68||dy<2||dy>68) return;
+        rctx.fillStyle=color; rctx.beginPath(); rctx.arc(dx,dy,sz,0,Math.PI*2); rctx.fill();
+      };
+
+      // origin cross if visible
+      const ocx=(0-player.x)*scale+35, ocy=(0-player.y)*scale+35;
+      if (ocx>=2 && ocx<=68 && ocy>=2 && ocy<=68){
+        rctx.strokeStyle='#fff'; rctx.lineWidth=1;
+        rctx.beginPath();
+        rctx.moveTo(ocx-3,ocy); rctx.lineTo(ocx+3,ocy);
+        rctx.moveTo(ocx,ocy-3); rctx.lineTo(ocx,ocy+3);
+        rctx.stroke();
+      }
+
+      // blips
+      for (const f of food)     dot(f.x,f.y,1, f.frenzy?f.col:'#ff0');
+      for (const o of foes)     dot(o.x,o.y,1, '#f00');
+      for (const t of titans)   dot(t.x,t.y,1.5,'#cc00ff');
+      for (const s of spectres) dot(s.x,s.y,1.5,'#ff39ff');
+      for (const r of reapers)  dot(r.x,r.y,1.5,'#ff8800');
+      if (pill.active)          dot(pill.x,pill.y,1.5,'#00aaff');
+      if (shield.active)        dot(shield.x,shield.y,1.5,'#ffd700'); // correct Y
+      for (const b of beacons)  dot(b.x,b.y,1.5,'#fff');
     }
 
-    /* ===================== Depth Grid (orthogonal with vanishing hint) ===================== */
-    function drawDepthGrid(ts){
-      // Sync color with tail cycle (hueT)
+    /* ===================== Orthogonal Infinite Grid (no weird perspective) ===================== */
+    // World-anchored grid that parallax-drifts with camera; hue sync via hueT
+    function drawOrthogonalGrid(ts){
       const tMix = (Math.sin(hueT*2*Math.PI)*0.5+0.5);
       const color = mix('#00e4b8','#ff39ff', tMix);
-      const alpha = 0.22 + 0.06*Math.sin(ts*0.002); // idle pulse
+      const alpha = 0.18 + 0.06*Math.sin(ts*0.002); // idle pulse
 
       ctx.save();
       ctx.strokeStyle = color;
       ctx.globalAlpha = alpha;
-      ctx.lineWidth = 1;
 
-      // Perspective-ish lines: two sets (verticals leaning to a center, horizontals leaning oppositely)
-      const spacing = 120;
-      const vpX = player.x, vpY = player.y + 900; // vanishing point below player for depth
-      const cols = 16, rows = 12;
+      const spacing = 160;      // big readable cells
+      const thin    = 0.75;     // subtle lines
+      ctx.lineWidth = thin;
 
-      // Transform to world space (already in world transform when called)
-      for (let i=-cols;i<=cols;i++){
-        const gx = i*spacing;
+      // Compute camera-aligned grid offset so it "slides" under the player
+      const camX = player.x, camY = player.y;
+      const startX = Math.floor((camX - W/zoom)*1/spacing)*spacing - spacing*2;
+      const endX   = Math.floor((camX + W/zoom)*1/spacing)*spacing + spacing*2;
+      const startY = Math.floor((camY - H/zoom)*1/spacing)*spacing - spacing*2;
+      const endY   = Math.floor((camY + H/zoom)*1/spacing)*spacing + spacing*2;
+
+      // Vertical lines
+      for (let x = startX; x <= endX; x += spacing){
         ctx.beginPath();
-        ctx.moveTo(gx, player.y - H/zoom); // start high above
-        // pull toward vanishing point
-        ctx.lineTo(lerp(gx, vpX, 0.20), lerp(player.y + H/zoom, vpY, 0.35));
+        ctx.moveTo(x, startY);
+        ctx.lineTo(x, endY);
         ctx.stroke();
       }
-      for (let j=-rows;j<=rows;j++){
-        const gy = j*spacing + (Math.sin((player.x*0.002)+j)*12); // subtle parallax wave
+      // Horizontal lines
+      for (let y = startY; y <= endY; y += spacing){
         ctx.beginPath();
-        ctx.moveTo(player.x - W/zoom, gy);
-        ctx.lineTo(lerp(player.x + W/zoom, vpX, 0.20), lerp(gy, vpY, 0.28));
+        ctx.moveTo(startX, y);
+        ctx.lineTo(endX, y);
         ctx.stroke();
       }
 
@@ -359,9 +386,6 @@
       }
     }
 
-    /* ===================== Radar Mini-Map Draw ===================== */
-    function maybeDrawRadar(){ if (radarActive) drawRadar(); }
-
     /* ===================== Main Loop ===================== */
     let last=0;
     function loop(ts){
@@ -369,7 +393,7 @@
       let dt=(ts-last)||16; if (dt>50) dt=50; last=ts;
 
       // FPS
-      frames++; fpsClock+=dt; if (fpsClock>=500){ lastFps=Math.round(frames*1000/fpsClock); fpsEl.textContent='FPS: '+lastFps; frames=0; fpsClock=0; }
+      frames++; fpsClock+=dt; if (fpsClock>=500){ const f=Math.round(frames*1000/fpsClock); fpsEl.textContent='FPS: '+f; frames=0; fpsClock=0; }
 
       // zoom target based on player size, limited by slider
       zoom = lerp(zoom, Math.min(sliderZoom, Math.max(0.5, H/(player.r*4))), ZOOM_EASE);
@@ -426,8 +450,8 @@
       // WORLD SPACE
       ctx.setTransform(zoom,0,0,zoom,offset.x,offset.y);
 
-      // Depth grid synced to hue cycle (do first so tail draws on top)
-      drawDepthGrid(ts);
+      // Orthogonal grid (no perspective weirdness), hue synced
+      drawOrthogonalGrid(ts);
 
       // Particles
       if (particles.length>240) particles.splice(0, particles.length-240);
@@ -512,7 +536,6 @@
         if (!ignore && d<player.r){
           player.mass += s.r*7; player.flash={color:'#ff39ff',t:500}; player.speedBoost=SPECTRE_SPEED_MS;
           spectres.splice(i,1); spectreKill++; burst(s.x,s.y,'#ff39ff'); document.getElementById('eatSnd').play().catch(()=>{});
-          // spawn reapers gradually
           if (spectreKill%6===0 && reapers.length<REAPER_MAX) spawnReaper();
           continue;
         }
@@ -534,7 +557,7 @@
         if (d>2400){ reapers.splice(i,1); continue; }
         if (!ignore && d<player.r){
           player.mass += r.r; player.flash={color:'#ff8800',t:500};
-          reapers.splice(i,1); burst(r.x, r.y, '#ff8800'); continue; // fixed burst Y
+          reapers.splice(i,1); burst(r.x, r.y, '#ff8800'); continue;
         }
         if (!ignore && !shieldActive && d<r.r && r.r>player.r){
           if (player.blink<50) player.blink=BLINK_MS;
@@ -542,7 +565,7 @@
         }
         if (r.charge<=0){
           r.charge=300; const step=ignore?-100:(r.r>player.r?130:-100);
-          r.x += (player.x-r.x)/d*step; r.y += (player.y-r.y)/d*step; // fixed
+          r.x += (player.x-r.x)/d*step; r.y += (player.y-r.y)/d*step;
         }
         glow(r.x,r.y,r.r,'#ff8800',0.9);
       }
@@ -551,14 +574,12 @@
       if (pill.active && dist(player.x,player.y,pill.x,pill.y) < player.r+pill.r){
         player.flash={color:'#00aaff',t:500}; frenzy=true; F_TIME=10000; pill.active=false;
         document.getElementById('frenzySnd').play().catch(()=>{}); burst(pill.x,pill.y,'#00aaff');
-        // orbiting frenzy food
         for (let i=0;i<40;i++){
           const a=Math.random()*Math.PI*2, R=120+Math.random()*120;
           food.push({ cx:player.x, cy:player.y, ang:a, baseR:R, angV:.004+Math.random()*.003,
             x:player.x+Math.cos(a)*R, y:player.y+Math.sin(a)*R, r:5, frenzy:true, col:'#ff39ff' });
         }
-        // color cycle speed-up during frenzy
-        hueT += 0.15;
+        hueT += 0.15; // color cycle speed-up during frenzy
       }
       if (frenzy){ F_TIME-=dt; if (F_TIME<=0){ frenzy=false; food.forEach(f=>f.frenzy=false); } }
       for (const f of food){ if (f.frenzy){ f.ang+=f.angV*dt; f.x=f.cx+Math.cos(f.ang)*f.baseR; f.y=f.cy+Math.sin(f.ang)*f.baseR; } }
@@ -574,10 +595,15 @@
       if (!shield.active && !shieldActive){ shield.cd+=dt; if (shield.cd>30000+Math.random()*15000) spawnShield(); }
       if (shield.active) glow(shield.x,shield.y,shield.r,'#ffd700',0.9);
 
-      // BEACONS
+      // BEACONS -> RADAR
       for (let i=beacons.length-1;i>=0;i--){
         const b=beacons[i]; if (!onScreen(b.x,b.y,b.r)) continue;
-        if (dist(player.x,player.y,b.x,b.y) < player.r+b.r){ beacons.length=0; radarActive=true; document.getElementById('radarWrap').style.display='block'; }
+        if (dist(player.x,player.y,b.x,b.y) < player.r+b.r){
+          beacons.length=0;
+          radarActive=true;
+          const wrap=document.getElementById('radarWrap');
+          if (wrap) wrap.style.display='block';
+        }
         glow(b.x,b.y,b.r,'#fff',0.5);
       }
 
@@ -596,7 +622,7 @@
         glow(p.x,p.y, player.r*(1 - t), mix('#00e4b8','#ff39ff', t), 0.22);
       }
 
-      // Color cycle base (always running, speeds up on events)
+      // Color cycle base (always running)
       hueT += dt*0.0002;
 
       // Core glow / idle pulse
@@ -609,7 +635,7 @@
       // Shield ring visual
       drawShieldRing(ts);
 
-      // Head sparkle halo (kept as ambient sparkle even without head)
+      // Ambient sparkle & aura (kept lightweight)
       for (let i=0;i<3;i++){
         const a=Math.random()*Math.PI*2, rd=player.r*(0.8+Math.random()*0.4);
         headParticles.push({ x:player.x+Math.cos(a)*rd, y:player.y+Math.sin(a)*rd, dx:(Math.random()-0.5)*0.5, dy:(Math.random()-0.5)*0.5,
@@ -620,8 +646,6 @@
         const p=headParticles[i]; p.x+=p.dx*(dt/16); p.y+=p.dy*(dt/16); p.ttl-=dt;
         glow(p.x,p.y,p.r,p.col, Math.max(0,p.ttl/50), 15*zoom); if (p.ttl<=0) headParticles.splice(i,1);
       }
-
-      // Aura orbits
       if (playerAuraParticles.length<18){
         const a=Math.random()*Math.PI*2, D=player.r*(1+Math.random()*0.5);
         playerAuraParticles.push({ ang:a, dist:D, angV:0.015+Math.random()*0.01,
@@ -639,7 +663,7 @@
       scoreEl.textContent = Math.floor(player.mass*10);
       levelEl.textContent = level;
 
-      maybeDrawRadar();
+      if (radarActive) drawRadar();
       drawJoystick();
 
       requestAnimationFrame(loop);
